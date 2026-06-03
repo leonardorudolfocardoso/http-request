@@ -37,8 +37,14 @@ fn handle(request: &Request) -> Response {
     }
 }
 
-fn parse<'a>(raw: &'a RawRequest) -> Request<'a> {
-    let request_line_end = raw.windows(2).position(|bytes| bytes == b"\r\n").unwrap();
+#[derive(Debug)]
+struct InvalidRequest;
+
+fn parse<'a>(raw: &'a RawRequest) -> Result<Request<'a>, InvalidRequest> {
+    let request_line_end = raw
+        .windows(2)
+        .position(|bytes| bytes == b"\r\n")
+        .ok_or(InvalidRequest)?;
     let request_line_bytes = &raw[..request_line_end];
     let request_line = str::from_utf8(request_line_bytes).unwrap();
     let mut parts = request_line.split_whitespace();
@@ -63,12 +69,12 @@ fn parse<'a>(raw: &'a RawRequest) -> Request<'a> {
         headers.insert(key, value);
     }
 
-    Request {
+    Ok(Request {
         version,
         method,
         path,
         headers,
-    }
+    })
 }
 
 fn read_request<R: BufRead>(reader: &mut R, buf: &mut RawRequest) {
@@ -110,20 +116,43 @@ fn read_request<R: BufRead>(reader: &mut R, buf: &mut RawRequest) {
     reader.read_exact(&mut buf[start..]).unwrap();
 }
 
+fn should_close(request: &Request) -> bool {
+    request.headers.iter().any(|(key, value)| {
+        key.eq_ignore_ascii_case("connection") && value.eq_ignore_ascii_case("close")
+    })
+}
+
 fn main() {
     let addr = "127.0.0.1:8080";
     let listener = TcpListener::bind(addr).unwrap();
 
     loop {
         match listener.accept() {
-            Ok((mut stream, _)) => {
+            Ok((stream, _)) => {
                 let mut reader = BufReader::new(&stream);
-                let mut raw = RawRequest::new();
-                read_request(&mut reader, &mut raw);
-                let request = parse(&raw);
-                let response = handle(&request);
+                let mut raw = RawRequest::with_capacity(4096);
+                loop {
+                    raw.clear();
 
-                stream.write_all(response.as_bytes()).unwrap();
+                    read_request(&mut reader, &mut raw);
+
+                    if raw.is_empty() {
+                        break;
+                    }
+
+                    match parse(&raw) {
+                        Ok(request) => {
+                            let response = handle(&request);
+
+                            reader.get_mut().write_all(response.as_bytes()).unwrap();
+
+                            if should_close(&request) {
+                                break;
+                            }
+                        }
+                        Err(e) => eprintln!("{e:?}"),
+                    }
+                }
             }
             Err(e) => eprintln!("{e}"),
         }
