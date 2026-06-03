@@ -3,7 +3,10 @@ use std::{
     net::TcpListener,
 };
 
-fn handle(request: &str) -> String {
+type Request = String;
+type Response = String;
+
+fn handle(request: &Request) -> Response {
     match request.trim() {
         "GET /test HTTP/1.1" => {
             let body = "Hello world!";
@@ -25,6 +28,12 @@ fn handle(request: &str) -> String {
     }
 }
 
+fn read_request<R: BufRead>(r: &mut R) -> Request {
+    let mut request = String::new();
+    r.read_to_string(&mut request).unwrap();
+    request
+}
+
 fn main() {
     let addr = "127.0.0.1:8080";
     let listener = TcpListener::bind(addr).unwrap();
@@ -33,25 +42,8 @@ fn main() {
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let mut buf = BufReader::new(&stream);
-                let mut request = Vec::new();
-                loop {
-                    let mut line = String::new();
-                    let bytes = buf.read_line(&mut line).unwrap();
-
-                    if bytes == 0 {
-                        break;
-                    }
-
-                    if line == "\r\n" {
-                        break;
-                    }
-
-                    request.push(line);
-                }
-
-                let req = request.first().unwrap();
-
-                let response = handle(req);
+                let request = read_request(&mut buf);
+                let response = handle(&request);
 
                 stream.write_all(response.as_bytes()).unwrap();
             }
