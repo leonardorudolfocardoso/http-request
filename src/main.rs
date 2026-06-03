@@ -4,23 +4,19 @@ use std::{
     net::TcpListener,
 };
 
-type RawRequest = String;
-type Headers = HashMap<String, String>;
+type RawRequest = Vec<u8>;
+type Headers<'a> = HashMap<&'a str, &'a str>;
 
-struct Request {
-    version: String,
-    method: String,
-    path: String,
-    headers: Headers,
+struct Request<'a> {
+    version: &'a str,
+    method: &'a str,
+    path: &'a str,
+    headers: Headers<'a>,
 }
 type Response = String;
 
 fn handle(request: &Request) -> Response {
-    match (
-        request.method.as_str(),
-        request.path.as_str(),
-        request.version.as_str(),
-    ) {
+    match (request.method, request.path, request.version) {
         ("GET", "/test", "HTTP/1.1") => {
             let body = "Hello world!";
 
@@ -41,23 +37,30 @@ fn handle(request: &Request) -> Response {
     }
 }
 
-fn parse(raw: RawRequest) -> Request {
-    let mut lines = raw.lines();
-    let request_line = lines.next().unwrap();
+fn parse<'a>(raw: &'a RawRequest) -> Request<'a> {
+    let request_line_end = raw.windows(2).position(|bytes| bytes == b"\r\n").unwrap();
+    let request_line_bytes = &raw[..request_line_end];
+    let request_line = str::from_utf8(request_line_bytes).unwrap();
     let mut parts = request_line.split_whitespace();
-    let method = parts.next().unwrap().to_owned();
-    let path = parts.next().unwrap().to_owned();
-    let version = parts.next().unwrap().to_owned();
+    let method = parts.next().unwrap();
+    let path = parts.next().unwrap();
+    let version = parts.next().unwrap();
+
+    let header_start = request_line_end + 2;
+    let header_end = header_start
+        + raw[header_start..]
+            .windows(4)
+            .position(|bytes| bytes == b"\r\n\r\n")
+            .unwrap();
+
+    let header_bytes = &raw[header_start..header_end];
+    let headers_text = str::from_utf8(header_bytes).unwrap();
 
     let mut headers = Headers::new();
 
-    for line in lines {
-        if line.is_empty() {
-            break;
-        }
-        if let Some((key, value)) = line.split_once(": ") {
-            headers.insert(key.to_owned(), value.to_owned());
-        }
+    for line in headers_text.split("\r\n") {
+        let (key, value) = line.split_once(": ").unwrap();
+        headers.insert(key, value);
     }
 
     Request {
@@ -69,9 +72,9 @@ fn parse(raw: RawRequest) -> Request {
 }
 
 fn read<R: BufRead>(r: &mut R) -> RawRequest {
-    let mut request = String::new();
-    r.read_to_string(&mut request).unwrap();
-    request
+    let mut buf = Vec::new();
+    r.read_to_end(&mut buf).unwrap();
+    buf
 }
 
 fn main() {
@@ -83,7 +86,7 @@ fn main() {
             Ok((mut stream, _)) => {
                 let mut buf = BufReader::new(&stream);
                 let raw = read(&mut buf);
-                let request = parse(raw);
+                let request = parse(&raw);
                 let response = handle(&request);
 
                 stream.write_all(response.as_bytes()).unwrap();
