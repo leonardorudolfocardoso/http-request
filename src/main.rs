@@ -28,7 +28,7 @@ fn handle(request: &Request) -> Response {
     }
 }
 
-fn read_request<R: BufRead>(r: &mut R) -> Request {
+fn read<R: BufRead>(r: &mut R) -> Request {
     let mut request = String::new();
     r.read_to_string(&mut request).unwrap();
     request
@@ -42,7 +42,7 @@ fn main() {
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let mut buf = BufReader::new(&stream);
-                let request = read_request(&mut buf);
+                let request = read(&mut buf);
                 let response = handle(&request);
 
                 stream.write_all(response.as_bytes()).unwrap();
