@@ -1,12 +1,6 @@
-use std::{
-    io::{BufReader, Write},
-    net::TcpListener,
-};
+use std::{io::BufReader, net::TcpListener};
 
-use http_server::{
-    handle,
-    http::{RawRequest, ReadStatus, Reader},
-};
+use http_server::serve_connection;
 
 fn main() {
     let addr = "127.0.0.1:8080";
@@ -16,28 +10,9 @@ fn main() {
         match listener.accept() {
             Ok((stream, _)) => {
                 let mut writer = stream.try_clone().unwrap();
-                let mut reader = Reader::new(BufReader::new(&stream));
-                let mut raw = RawRequest::with_capacity(4096);
-                loop {
-                    raw.clear();
+                let reader = BufReader::new(&stream);
 
-                    match reader.read(&mut raw) {
-                        Ok(ReadStatus::Complete) => {
-                            let (request, response) = handle(&raw);
-
-                            writer.write_all(response.as_bytes()).unwrap();
-
-                            if request.is_none_or(|req| req.should_close()) {
-                                break;
-                            }
-                        }
-                        Ok(ReadStatus::Closed) => break,
-                        Err(e) => {
-                            eprintln!("{e}");
-                            break;
-                        }
-                    }
-                }
+                serve_connection(reader, &mut writer);
             }
             Err(e) => eprintln!("{e}"),
         }

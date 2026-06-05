@@ -1,4 +1,6 @@
-use crate::http::{Headers, RawRequest, Request, Response};
+use std::io::{BufRead, Write};
+
+use crate::http::{Headers, RawRequest, ReadStatus, Reader, Request, Response};
 
 pub mod http;
 
@@ -22,6 +24,36 @@ pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
     };
 
     (request.ok(), response)
+}
+
+pub fn serve_connection<R, W>(reader: R, writer: &mut W)
+where
+    R: BufRead,
+    W: Write,
+{
+    let mut reader = Reader::new(reader);
+    let mut request = RawRequest::with_capacity(4096);
+
+    loop {
+        request.clear();
+
+        match reader.read(&mut request) {
+            Ok(ReadStatus::Complete) => {
+                let (request, response) = handle(&request);
+
+                writer.write_all(response.as_bytes()).unwrap();
+
+                if request.is_none_or(|req| req.should_close()) {
+                    break;
+                }
+            }
+            Ok(ReadStatus::Closed) => break,
+            Err(e) => {
+                eprintln!("{e}");
+                break;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
