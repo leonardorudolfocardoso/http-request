@@ -18,7 +18,7 @@ impl<'a> Request<'a> {
     pub fn path(&self) -> &'a str {
         self.path
     }
-    pub fn headers(&'a self) -> &'a Headers<'a> {
+    pub fn headers(&self) -> &Headers<'a> {
         &self.headers
     }
     pub fn should_close(&self) -> bool {
