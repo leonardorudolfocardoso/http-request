@@ -1,8 +1,8 @@
 use std::io::BufRead;
 
-use crate::request::{RawRequest, Request};
+use crate::http::{RawRequest, Request};
 
-pub mod request {
+pub mod http {
     use std::collections::HashMap;
 
     pub type RawRequest = Vec<u8>;

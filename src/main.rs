@@ -4,8 +4,9 @@ use std::{
 };
 
 use http_server::{
-    ReadRequest, handle, read_request,
-    request::{RawRequest, Request},
+    ReadRequest, handle,
+    http::{RawRequest, Request},
+    read_request,
 };
 
 fn main() {
