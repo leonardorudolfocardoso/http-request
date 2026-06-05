@@ -33,6 +33,7 @@ pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
 
             format!(
                 "HTTP/1.1 400 BAD REQUEST\r\n\
+                Connection: close\r\n\
                 Content-Length: {len}\r\n\
                 \r\n\
                 {body}"
