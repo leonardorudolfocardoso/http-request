@@ -58,6 +58,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
 
     #[test]
@@ -97,6 +99,47 @@ mod tests {
             response.as_bytes(),
             "HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\nContent-Length: 17\r\n\r\nMalformed request"
                 .as_bytes()
+        );
+    }
+
+    #[test]
+    fn serve_connection_writes_bad_request_and_stops() {
+        let input = Cursor::new(
+            &b"GET\r\nHost: localhost\r\n\r\nGET /test HTTP/1.1\r\nHost: localhost\r\n\r\n"[..],
+        );
+        let mut output = Vec::new();
+
+        serve_connection(input, &mut output);
+
+        assert_eq!(
+            output,
+            b"HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\nContent-Length: 17\r\n\r\nMalformed request"
+        );
+    }
+
+    #[test]
+    fn serve_connection_stops_after_connection_close_request() {
+        let input = Cursor::new(&b"GET /test HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\nGET /test HTTP/1.1\r\nHost: localhost\r\n\r\n"[..]);
+        let mut output = Vec::new();
+
+        serve_connection(input, &mut output);
+
+        assert_eq!(
+            output,
+            b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nHello world!"
+        );
+    }
+
+    #[test]
+    fn serve_connection_processes_multiple_keep_alive_requests() {
+        let input = Cursor::new(&b"GET /test HTTP/1.1\r\nHost: localhost\r\n\r\nGET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"[..]);
+        let mut output = Vec::new();
+
+        serve_connection(input, &mut output);
+
+        assert_eq!(
+            output,
+            b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nHello world!HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n"
         );
     }
 }
