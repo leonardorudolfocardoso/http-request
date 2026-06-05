@@ -12,7 +12,9 @@ fn main() {
                 let mut writer = stream.try_clone().unwrap();
                 let reader = BufReader::new(&stream);
 
-                serve_connection(reader, &mut writer);
+                if let Err(e) = serve_connection(reader, &mut writer) {
+                    eprintln!("{e}");
+                }
             }
             Err(e) => eprintln!("{e}"),
         }

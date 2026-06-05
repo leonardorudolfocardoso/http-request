@@ -26,7 +26,7 @@ pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
     (request.ok(), response)
 }
 
-pub fn serve_connection<R, W>(reader: R, writer: &mut W)
+pub fn serve_connection<R, W>(reader: R, writer: &mut W) -> std::io::Result<()>
 where
     R: BufRead,
     W: Write,
@@ -41,7 +41,7 @@ where
             Ok(ReadStatus::Complete) => {
                 let (request, response) = handle(&request);
 
-                writer.write_all(response.as_bytes()).unwrap();
+                writer.write_all(response.as_bytes())?;
 
                 if request.is_none_or(|req| req.should_close()) {
                     break;
@@ -54,11 +54,13 @@ where
             }
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::io::{Cursor, ErrorKind};
 
     use super::*;
 
@@ -109,7 +111,7 @@ mod tests {
         );
         let mut output = Vec::new();
 
-        serve_connection(input, &mut output);
+        serve_connection(input, &mut output).unwrap();
 
         assert_eq!(
             output,
@@ -122,7 +124,7 @@ mod tests {
         let input = Cursor::new(&b"GET /test HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\nGET /test HTTP/1.1\r\nHost: localhost\r\n\r\n"[..]);
         let mut output = Vec::new();
 
-        serve_connection(input, &mut output);
+        serve_connection(input, &mut output).unwrap();
 
         assert_eq!(
             output,
@@ -135,11 +137,34 @@ mod tests {
         let input = Cursor::new(&b"GET /test HTTP/1.1\r\nHost: localhost\r\n\r\nGET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"[..]);
         let mut output = Vec::new();
 
-        serve_connection(input, &mut output);
+        serve_connection(input, &mut output).unwrap();
 
         assert_eq!(
             output,
             b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nHello world!HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n"
         );
+    }
+
+    #[test]
+    fn serve_connection_returns_write_errors() {
+        struct FailingWriter;
+
+        impl Write for FailingWriter {
+            fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(ErrorKind::BrokenPipe, "write failed"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let input =
+            Cursor::new(&b"GET /test HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"[..]);
+        let mut output = FailingWriter;
+
+        let err = serve_connection(input, &mut output).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::BrokenPipe);
     }
 }
