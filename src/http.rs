@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, io::BufRead};
 
 pub type RawRequest = Vec<u8>;
 pub type Headers<'a> = HashMap<&'a str, &'a str>;
@@ -68,5 +68,59 @@ impl<'a> TryFrom<&'a RawRequest> for Request<'a> {
             path,
             headers,
         })
+    }
+}
+pub enum ReadStatus {
+    Complete,
+    Closed,
+}
+
+pub struct Reader<R: BufRead> {
+    inner: R,
+}
+
+impl<R: BufRead> Reader<R> {
+    pub fn new(inner: R) -> Self {
+        Self { inner }
+    }
+    pub fn read(&mut self, buf: &mut RawRequest) -> std::io::Result<ReadStatus> {
+        loop {
+            let mut line = Vec::new();
+
+            let n = self.inner.read_until(b'\n', &mut line)?;
+
+            if n == 0 {
+                return Ok(ReadStatus::Closed);
+            }
+
+            let end = line == b"\r\n";
+
+            buf.extend(line);
+
+            if end {
+                break;
+            }
+        }
+
+        let headers = std::str::from_utf8(buf).unwrap();
+
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (key, value) = line.split_once(": ")?;
+                if key.eq_ignore_ascii_case("content-length") {
+                    value.parse::<usize>().ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+
+        let start = buf.len();
+
+        buf.resize(start + content_length, 0);
+        self.inner.read_exact(&mut buf[start..])?;
+
+        Ok(ReadStatus::Complete)
     }
 }
