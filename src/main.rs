@@ -77,14 +77,19 @@ fn parse<'a>(raw: &'a RawRequest) -> Result<Request<'a>, InvalidRequest> {
     })
 }
 
-fn read_request<R: BufRead>(reader: &mut R, buf: &mut RawRequest) {
+enum ReadRequest {
+    Complete,
+    Closed,
+}
+
+fn read_request<R: BufRead>(reader: &mut R, buf: &mut RawRequest) -> std::io::Result<ReadRequest> {
     loop {
         let mut line = Vec::new();
 
-        let n = reader.read_until(b'\n', &mut line).unwrap();
+        let n = reader.read_until(b'\n', &mut line)?;
 
         if n == 0 {
-            break;
+            return Ok(ReadRequest::Closed);
         }
 
         let end = line == b"\r\n";
@@ -113,7 +118,9 @@ fn read_request<R: BufRead>(reader: &mut R, buf: &mut RawRequest) {
     let start = buf.len();
 
     buf.resize(start + content_length, 0);
-    reader.read_exact(&mut buf[start..]).unwrap();
+    reader.read_exact(&mut buf[start..])?;
+
+    Ok(ReadRequest::Complete)
 }
 
 fn should_close(request: &Request) -> bool {
@@ -134,23 +141,24 @@ fn main() {
                 loop {
                     raw.clear();
 
-                    read_request(&mut reader, &mut raw);
+                    match read_request(&mut reader, &mut raw) {
+                        Ok(ReadRequest::Complete) => match parse(&raw) {
+                            Ok(request) => {
+                                let response = handle(&request);
 
-                    if raw.is_empty() {
-                        break;
-                    }
+                                reader.get_mut().write_all(response.as_bytes()).unwrap();
 
-                    match parse(&raw) {
-                        Ok(request) => {
-                            let response = handle(&request);
-
-                            reader.get_mut().write_all(response.as_bytes()).unwrap();
-
-                            if should_close(&request) {
-                                break;
+                                if should_close(&request) {
+                                    break;
+                                }
                             }
+                            Err(e) => eprintln!("{e:?}"),
+                        },
+                        Ok(ReadRequest::Closed) => break,
+                        Err(e) => {
+                            eprintln!("{e}");
+                            break;
                         }
-                        Err(e) => eprintln!("{e:?}"),
                     }
                 }
             }
