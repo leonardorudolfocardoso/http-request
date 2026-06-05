@@ -5,7 +5,7 @@ use std::{
 
 use http_server::{
     ReadRequest, handle, read_request,
-    request::{RawRequest, parse, should_close},
+    request::{RawRequest, parse},
 };
 
 fn main() {
@@ -27,7 +27,7 @@ fn main() {
 
                                 reader.get_mut().write_all(response.as_bytes()).unwrap();
 
-                                if should_close(&request) {
+                                if request.should_close() {
                                     break;
                                 }
                             }

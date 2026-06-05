@@ -26,11 +26,11 @@ pub mod request {
         pub fn headers(&'a self) -> &'a Headers<'a> {
             &self.headers
         }
-    }
-    pub fn should_close(request: &Request) -> bool {
-        request.headers.iter().any(|(key, value)| {
-            key.eq_ignore_ascii_case("connection") && value.eq_ignore_ascii_case("close")
-        })
+        pub fn should_close(&self) -> bool {
+            self.headers.iter().any(|(key, value)| {
+                key.eq_ignore_ascii_case("connection") && value.eq_ignore_ascii_case("close")
+            })
+        }
     }
     #[derive(Debug)]
     pub struct InvalidRequest;
