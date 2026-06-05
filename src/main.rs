@@ -5,7 +5,7 @@ use std::{
 
 use http_server::{
     handle,
-    http::{RawRequest, ReadStatus, Reader, Request},
+    http::{RawRequest, ReadStatus, Reader},
 };
 
 fn main() {
@@ -16,25 +16,21 @@ fn main() {
         match listener.accept() {
             Ok((stream, _)) => {
                 let mut writer = stream.try_clone().unwrap();
-                let reader = BufReader::new(&stream);
+                let mut reader = Reader::new(BufReader::new(&stream));
                 let mut raw = RawRequest::with_capacity(4096);
-                let mut r = Reader::new(reader);
                 loop {
                     raw.clear();
 
-                    match r.read(&mut raw) {
-                        Ok(ReadStatus::Complete) => match Request::try_from(&raw) {
-                            Ok(request) => {
-                                let response = handle(&request);
+                    match reader.read(&mut raw) {
+                        Ok(ReadStatus::Complete) => {
+                            let (request, response) = handle(&raw);
 
-                                writer.write_all(response.as_bytes()).unwrap();
+                            writer.write_all(response.as_bytes()).unwrap();
 
-                                if request.should_close() {
-                                    break;
-                                }
+                            if request.is_none_or(|req| req.should_close()) {
+                                break;
                             }
-                            Err(e) => eprintln!("{e:?}"),
-                        },
+                        }
                         Ok(ReadStatus::Closed) => break,
                         Err(e) => {
                             eprintln!("{e}");

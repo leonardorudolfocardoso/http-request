@@ -35,6 +35,16 @@ pub enum InvalidRequest {
     Utf8Error(Utf8Error),
 }
 
+impl Display for InvalidRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InvalidRequest::Malformed => write!(f, "Malformed request"),
+            InvalidRequest::MalformedHeader => write!(f, "Malformed header request"),
+            InvalidRequest::Utf8Error(e) => write!(f, "Invalid utf8 request: {e}"),
+        }
+    }
+}
+
 impl<'a> TryFrom<&'a RawRequest> for Request<'a> {
     type Error = InvalidRequest;
 
