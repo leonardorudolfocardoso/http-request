@@ -1,8 +1,6 @@
-use crate::http::{RawRequest, Request};
+use crate::http::{Headers, RawRequest, Request, Response};
 
 pub mod http;
-
-pub type Response = String;
 
 pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
     let request = Request::try_from(request);
@@ -11,33 +9,15 @@ pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
             ("GET", "/test", "HTTP/1.1") => {
                 let body = "Hello world!";
 
-                format!(
-                    "HTTP/1.1 200 OK\r\n\
-                         Content-Length: {}\r\n\
-                         \r\n\
-                          {}",
-                    body.len(),
-                    body
-                )
+                Response::ok(Headers::new(), body)
             }
-            _ => "HTTP/1.1 404 NOT FOUND\r\n\
-                      Content-Length: 0\r\n\
-                      \r\n\
-                            "
-            .to_owned(),
+            _ => Response::not_found(Headers::new(), ""),
         },
         Err(ref e) => {
             eprintln!("{e:?}");
             let body = e.to_string();
-            let len = body.len();
 
-            format!(
-                "HTTP/1.1 400 BAD REQUEST\r\n\
-                Connection: close\r\n\
-                Content-Length: {len}\r\n\
-                \r\n\
-                {body}"
-            )
+            Response::bad_request(Headers::from([("Connection", "close")]), &body)
         }
     };
 

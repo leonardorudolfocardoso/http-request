@@ -168,3 +168,68 @@ impl<R: BufRead> Reader<R> {
         Ok(ReadStatus::Complete)
     }
 }
+
+enum Status {
+    NotFound,
+    BadRequest,
+    Ok,
+}
+
+type Code = u16;
+impl Status {
+    fn name(&self) -> &'static str {
+        match self {
+            Status::NotFound => "NOT FOUND",
+            Status::BadRequest => "BAD REQUEST",
+            Status::Ok => "OK",
+        }
+    }
+    fn code(&self) -> Code {
+        match self {
+            Status::NotFound => 404,
+            Status::BadRequest => 400,
+            Status::Ok => 200,
+        }
+    }
+}
+
+impl Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let code = self.code();
+        let name = self.name();
+        write!(f, "{code} {name}")
+    }
+}
+
+pub struct Response(String);
+
+impl Response {
+    fn new(status: Status, headers: Headers, body: &str) -> Response {
+        let mut response = format!("HTTP/1.1 {status}\r\n");
+
+        for (key, value) in headers {
+            response.push_str(&format!("{key}: {value}\r\n"));
+        }
+
+        let len = body.len();
+        response.push_str(&format!("Content-Length: {len}\r\n\r\n"));
+
+        response.push_str(body);
+
+        Response(response)
+    }
+
+    pub fn ok(headers: Headers, body: &str) -> Response {
+        Response::new(Status::Ok, headers, body)
+    }
+    pub fn bad_request(headers: Headers, body: &str) -> Response {
+        Response::new(Status::BadRequest, headers, body)
+    }
+    pub fn not_found(headers: Headers, body: &str) -> Response {
+        Response::new(Status::NotFound, headers, body)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+}
