@@ -5,7 +5,7 @@ use std::{
 
 use http_server::{
     ReadRequest, handle, read_request,
-    request::{RawRequest, parse},
+    request::{RawRequest, Request},
 };
 
 fn main() {
@@ -21,7 +21,7 @@ fn main() {
                     raw.clear();
 
                     match read_request(&mut reader, &mut raw) {
-                        Ok(ReadRequest::Complete) => match parse(&raw) {
+                        Ok(ReadRequest::Complete) => match Request::try_from(&raw) {
                             Ok(request) => {
                                 let response = handle(&request);
 
