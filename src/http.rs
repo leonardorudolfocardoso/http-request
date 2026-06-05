@@ -70,6 +70,7 @@ impl<'a> TryFrom<&'a RawRequest> for Request<'a> {
         })
     }
 }
+
 pub enum ReadStatus {
     Complete,
     Closed,
