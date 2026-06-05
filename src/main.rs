@@ -3,7 +3,10 @@ use std::{
     net::TcpListener,
 };
 
-use http_server::{RawRequest, ReadRequest, handle, parse, read_request, should_close};
+use http_server::{
+    ReadRequest, handle, read_request,
+    request::{RawRequest, parse, should_close},
+};
 
 fn main() {
     let addr = "127.0.0.1:8080";
