@@ -1,8 +1,12 @@
-use std::io::{BufRead, Write};
+use std::{
+    io::{BufRead, Write},
+    time::Duration,
+};
 
 use crate::http::{Headers, RawRequest, ReadStatus, Reader, Request, Response};
 
 pub mod http;
+pub mod thread;
 
 pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
     let request = Request::try_from(request);
@@ -11,6 +15,12 @@ pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
             ("GET", "/test", "HTTP/1.1") => {
                 let body = "Hello world!";
 
+                Response::ok(Headers::new(), body)
+            }
+            ("GET", "/sleep", "HTTP/1.1") => {
+                let body = "Slept for 5s";
+
+                std::thread::sleep(Duration::from_secs(5));
                 Response::ok(Headers::new(), body)
             }
             _ => Response::not_found(Headers::new(), ""),
