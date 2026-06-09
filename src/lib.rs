@@ -133,6 +133,14 @@ mod tests {
 
     use super::*;
 
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap()
+    }
+
     #[test]
     fn handle_returns_ok_for_get_test() {
         let raw = b"GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
@@ -164,6 +172,46 @@ mod tests {
         let raw = b"GET\r\nHost: localhost\r\n\r\n".to_vec();
 
         let (request, response) = handle(&raw);
+
+        assert!(request.is_none());
+        assert_eq!(
+            response.as_bytes(),
+            "HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\nContent-Length: 17\r\n\r\nMalformed request"
+                .as_bytes()
+        );
+    }
+
+    #[test]
+    fn async_handle_returns_ok_for_get_test() {
+        let raw = b"GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
+
+        let (request, response) = runtime().block_on(async { async_handle(&raw).await });
+
+        assert!(request.is_some());
+        assert_eq!(
+            response.as_bytes(),
+            "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nHello world!".as_bytes()
+        );
+    }
+
+    #[test]
+    fn async_handle_returns_not_found_for_unknown_route() {
+        let raw = b"GET /missing HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
+
+        let (request, response) = runtime().block_on(async { async_handle(&raw).await });
+
+        assert!(request.is_some());
+        assert_eq!(
+            response.as_bytes(),
+            "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n".as_bytes()
+        );
+    }
+
+    #[test]
+    fn async_handle_returns_bad_request_for_malformed_request() {
+        let raw = b"GET\r\nHost: localhost\r\n\r\n".to_vec();
+
+        let (request, response) = runtime().block_on(async { async_handle(&raw).await });
 
         assert!(request.is_none());
         assert_eq!(
@@ -235,5 +283,37 @@ mod tests {
         let err = serve_connection(input, &mut output).unwrap_err();
 
         assert_eq!(err.kind(), ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn async_serve_connection_processes_multiple_keep_alive_requests() {
+        let input = b"GET /test HTTP/1.1\r\nHost: localhost\r\n\r\nGET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        let reader = tokio::io::BufReader::new(&input[..]);
+        let mut output = Vec::new();
+
+        runtime()
+            .block_on(async { async_serve_connection(reader, &mut output).await })
+            .unwrap();
+
+        assert_eq!(
+            output,
+            b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nHello world!HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n"
+        );
+    }
+
+    #[test]
+    fn async_serve_connection_writes_bad_request_and_stops() {
+        let input = b"GET\r\nHost: localhost\r\n\r\nGET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        let reader = tokio::io::BufReader::new(&input[..]);
+        let mut output = Vec::new();
+
+        runtime()
+            .block_on(async { async_serve_connection(reader, &mut output).await })
+            .unwrap();
+
+        assert_eq!(
+            output,
+            b"HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\nContent-Length: 17\r\n\r\nMalformed request"
+        );
     }
 }
