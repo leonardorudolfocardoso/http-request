@@ -294,6 +294,13 @@ mod tests {
 
     use super::*;
 
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap()
+    }
+
     #[test]
     fn parses_valid_get_request() {
         let raw = b"GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
@@ -374,6 +381,49 @@ mod tests {
         let mut buf = RawRequest::new();
 
         let status = reader.read(&mut buf).unwrap();
+
+        assert_eq!(status, ReadStatus::Complete);
+        assert_eq!(buf.as_slice(), expected);
+    }
+
+    #[test]
+    fn async_reader_returns_closed_on_eof_before_request() {
+        let mut reader = AsyncReader::new(tokio::io::BufReader::new(&b""[..]));
+        let mut buf = RawRequest::new();
+
+        let status = runtime()
+            .block_on(async { reader.read(&mut buf).await })
+            .unwrap();
+
+        assert_eq!(status, ReadStatus::Closed);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn async_reader_reads_complete_header_only_request() {
+        let input = b"GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        let mut reader = AsyncReader::new(tokio::io::BufReader::new(&input[..]));
+        let mut buf = RawRequest::new();
+
+        let status = runtime()
+            .block_on(async { reader.read(&mut buf).await })
+            .unwrap();
+
+        assert_eq!(status, ReadStatus::Complete);
+        assert_eq!(buf.as_slice(), input);
+    }
+
+    #[test]
+    fn async_reader_reads_body_using_content_length() {
+        let input =
+            b"POST /test HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhelloextra";
+        let expected = b"POST /test HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello";
+        let mut reader = AsyncReader::new(tokio::io::BufReader::new(&input[..]));
+        let mut buf = RawRequest::new();
+
+        let status = runtime()
+            .block_on(async { reader.read(&mut buf).await })
+            .unwrap();
 
         assert_eq!(status, ReadStatus::Complete);
         assert_eq!(buf.as_slice(), expected);
