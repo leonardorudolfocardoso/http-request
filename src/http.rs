@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Display, io::BufRead, str::Utf8Error};
 
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+
 pub type RawRequest = Vec<u8>;
 pub type Headers<'a> = HashMap<&'a str, &'a str>;
 pub struct Request<'a> {
@@ -166,6 +168,56 @@ impl<R: BufRead> Reader<R> {
 
         buf.resize(start + content_length, 0);
         self.inner.read_exact(&mut buf[start..])?;
+
+        Ok(ReadStatus::Complete)
+    }
+}
+
+pub struct AsyncReader<R: AsyncBufReadExt + Unpin> {
+    inner: R,
+}
+
+impl<R: AsyncBufReadExt + Unpin> AsyncReader<R> {
+    pub fn new(inner: R) -> Self {
+        Self { inner }
+    }
+    pub async fn read(&mut self, buf: &mut RawRequest) -> Result<ReadStatus, ReadError> {
+        loop {
+            let mut line = Vec::new();
+
+            let n = self.inner.read_until(b'\n', &mut line).await?;
+
+            if n == 0 {
+                return Ok(ReadStatus::Closed);
+            }
+
+            let end = line == b"\r\n";
+
+            buf.extend(line);
+
+            if end {
+                break;
+            }
+        }
+
+        let headers = std::str::from_utf8(buf)?;
+
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (key, value) = line.split_once(": ")?;
+                if key.eq_ignore_ascii_case("content-length") {
+                    value.parse::<usize>().ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+
+        let start = buf.len();
+
+        buf.resize(start + content_length, 0);
+        self.inner.read_exact(&mut buf[start..]).await?;
 
         Ok(ReadStatus::Complete)
     }

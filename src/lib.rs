@@ -3,10 +3,40 @@ use std::{
     time::Duration,
 };
 
-use crate::http::{Headers, RawRequest, ReadStatus, Reader, Request, Response};
+use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
+
+use crate::http::{AsyncReader, Headers, RawRequest, ReadStatus, Reader, Request, Response};
 
 pub mod http;
 pub mod thread;
+
+pub async fn async_handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
+    let request = Request::try_from(request);
+    let response = match request {
+        Ok(ref request) => match (request.method(), request.path(), request.version()) {
+            ("GET", "/test", "HTTP/1.1") => {
+                let body = "Hello world!";
+
+                Response::ok(Headers::new(), body)
+            }
+            ("GET", "/sleep", "HTTP/1.1") => {
+                let body = "Slept for 5s";
+
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                Response::ok(Headers::new(), body)
+            }
+            _ => Response::not_found(Headers::new(), ""),
+        },
+        Err(ref e) => {
+            eprintln!("{e:?}");
+            let body = e.to_string();
+
+            Response::bad_request(Headers::from([("Connection", "close")]), &body)
+        }
+    };
+
+    (request.ok(), response)
+}
 
 pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
     let request = Request::try_from(request);
@@ -34,6 +64,35 @@ pub fn handle<'a>(request: &'a RawRequest) -> (Option<Request<'a>>, Response) {
     };
 
     (request.ok(), response)
+}
+
+pub async fn async_serve_connection<R, W>(reader: R, writer: &mut W) -> std::io::Result<()>
+where
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut reader = AsyncReader::new(reader);
+    let mut request = RawRequest::with_capacity(4096);
+    loop {
+        request.clear();
+
+        match reader.read(&mut request).await {
+            Ok(ReadStatus::Complete) => {
+                let (request, response) = async_handle(&request).await;
+                writer.write_all(response.as_bytes()).await?;
+
+                if request.is_none_or(|req| req.should_close()) {
+                    break;
+                }
+            }
+            Ok(ReadStatus::Closed) => break,
+            Err(e) => {
+                eprintln!("{e}");
+                break;
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn serve_connection<R, W>(reader: R, writer: &mut W) -> std::io::Result<()>
